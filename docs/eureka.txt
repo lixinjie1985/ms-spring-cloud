@@ -1,0 +1,175 @@
+https://github.com/Netflix/eureka/wiki/
+Eureka at a glance
+What is Eureka?
+eureka是一个基于rest的服务，主要在AWS云中用于定位服务，目的是为了中间层服务器的负载均衡和故障转移。我们把这种服务叫做eureka server。
+eureka也有一个基于Java的客户端组件叫做eureka client，它使得与这种服务交互容易的多。客户端也有一个内建的负载均衡器，可以做些基础的轮询负载均衡。
+在netflix，一个复杂的多的负载均衡器包裹了eureka来提供带有权重的负载均衡，权重可以基于若干因素，像流量、资源使用情况和错误情况等，这样便可以更有优势的弹性恢复。
+What is the need for Eureka?
+在AWS云中，由于它的固有特性，服务器的启动和停机，不像和传统的负载均衡器一起工作时的服务器那样都有公认的IP地址和主机名。
+在AWS中，在运行时把服务器注册到负载均衡器和从其上注销要复杂的多。由于AWS没有提供一个中间层负载均衡器，eureka填补了这个空白。
+How different is Eureka from AWS ELB?
+AWS弹性负载均衡器是一个用于边缘服务的负载均衡解决方案，这里的边缘服务指的是暴露给终端用户的web流量。eureka满足的是对中间层负载均衡的需求。
+理论上可以把中间层服务放到AWS ELB后面。AWS ELB也是一个传统的基于代理的负载均衡解决方案，与eureka不同的是负载均衡发生在实例、服务器和主机级别。
+客户端实例知道正在和它对话的服务器的所有信息，这可以说是一个好事，也可以说是一个坏事，取决于你看待它的方式。
+如果你正在寻找一个基于粘性的用户session负载均衡，eureka没有提供一个开箱即用的方案。在netflix，我们更推崇服务是无状态的，者促成了一个更好的扩展能力模型，
+eureka非常适合这种情况。
+区别基于代理的负载均衡和eureka负载均衡的另一个重要方面是对于负载均衡器的停车你的应用可以迅速恢复，因为有关可用服务器的信息被缓存在客户端。
+这虽然付出一个小的代价，却大有益处。
+How different is Eureka from Route 53?
+route 53是一个命名服务，eureka也可以为中间层服务器提供这样的服务，但是它们的相似性却不一样。route 53是一个DNS服务，它可以持有你的
+DNS记录即使对于非AWS数据中心。route 53也能够做基于路由的延迟在横跨AWS区域间。eureka类似于一个内部的DNS，与世界上真正的DNS服务器没有关系。
+eureka是区域隔离的，这种情形下它不知道其它AWS区域里的服务器。它持有信息的主要目的是用于一个区域内的负载均衡。
+你可以使用route 53来注册中间层服务器，依赖于AWS的安全组来保护你的服务器不被公网访问，你的中间层服务器身份仍然被暴露到了外部世界。
+它也伴有基于传统DNS负载均衡方案的缺点，就是当服务器不健康或甚至不存在时，流量仍然会路由给它。
+How is Eureka used at Netflix?
+在netflix，eureka除了作为中间层负载均衡之外，还用于以下目的
+用于红/黑部署，把实例从流量中摘出来用于维护，
+
+When should I use Eureka?
+典型地运行在AWS云中，你有一个中间层服务的主机，你不想和AWS ELB注册在一起或暴露来自外部世界的流量。
+你要么在寻找一个简单的轮询负载均衡解决方案，或者愿意基于自己的负载均衡需求写一个包装器来包装eureka。
+你不需要粘性session和加载session数据到外部缓存的需求。更重要的，如果你的架构满足这个模型，
+一个基于客户端的负载均衡器是比较有利的，eureka是一个好的位置（地方）来满足那种用法。
+How does the application client and application server communicate?
+通信技术可以是你喜欢的任何事物。eureka帮助你找到有关服务的信息，但是对你的通信协议和方法并没有任何限制。
+例如，你可以使用eureka获取目标服务器地址，可以使用 thrift，http(s)或RPC等协议来和目标服务器通信。
+High level architecture
+架构图描述了eureka在netflix是如何被部署的，你应该按照这种方式去运行它。每个大区域（region）里面有一个eureka集群，
+它只了解本区域里面的实例。每个小区域（zone）里面至少要有一个eureka服务器来处理本小区里的失败。
+注册到eureka的服务，每30秒需要发送心跳来更新它们的租约。如果客户端有几次不能更新租约，大概90秒后它就会被从服务器登记处中剔除。
+注册信息和更新租约会被复制到eureka集群中的所有节点上。来自任何zone中的客户端都可以查询登记处信息来定位它们的服务，然后发起远程调用。
+Non-Java services and clients
+对于不是基于Java实现的服务，你可以使用与服务相同的语言实现eureka的客户端部分，或者可以运行一个side car，它本质上是一个Java应用
+带有一个内嵌的eureka客户端来处理注册和心跳，基于REST的端点被暴露用来执行所有被eureka客户端所支持的操作。非Java客户端可以使用
+REST端点查询有关其它服务的信息。
+Configurability
+可以在运行时添加和移除eureka集群节点。你可以调节内部的配置，如超时时间、线程池等。eureka使用archaius，如果你有一个配置源实现了很多
+这些配置，可以被动态的调节。
+Resilience
+在AWS云中，每次构建时不去考虑快速恢复是很难的。eureka从我们获取的这些经验中受益，把这种快速恢复同时构建进了客户端和服务器端。
+eureka客户端被构建用来处理一到多个eureka服务的失败。因为eureka客户端有注册信息的缓存，即使当所有的eureka服务器端都宕掉，客户端也能很好地运行。
+eureka服务器端是可迅速恢复的，相对于其它eureka peer的宕机。即使在客户端和服务器端之间的网络发生分区期间，服务器端有内建的快速恢复来阻止一个更大范围的停用。
+Multiple Regions
+在多个AWS region中部署eureka是一个相当直接的任务。不同region里的eureka集群之间互相不通信。
+Monitoring
+eureka使用servo来跟踪客户端和服务器端的很多信息用于性能、监控和告警。这些数据在JMX注册中可以获取到。
+Configuring Eureka
+eureka有两个组件，客户端和服务器。使用eureka时你的架构典型地有两个应用。应用程序客户端使用eureka客户端向应用程序服务发起请求。
+应用程序服务收到来自应用程序客户端的请求，并且把响应发回去。涉及到以下步骤，eureka服务器端，eureka客户端用于应用程序客户端，
+eureka客户端用于应用程序服务。eureka可以运行在AWS和非AWS环境。
+Configuring Eureka Client
+在类路径中寻找eureka-client.properties，进一步和环境相关的eureka-client-{test,prod}.properties对前者进行覆盖，通过命令行
+参数-Deureka.environment={test,prod}来指定环境。如果不想使用默认的配置文件名称，可以使用-Deureka.client.props={filename}
+来指定新的配置文件名称。至少要配置这些属性：（更多配置请参考官方github wiki）
+Application Name (eureka.name)
+Application Port (eureka.port)
+Virtual HostName (eureka.vipAddress)
+Eureka Service Urls (eureka.serviceUrls)
+Configuring Eureka Server
+需要两步配置，向上面那样进行客户端配置，服务器端配置。服务器端也是使用属性文件。首先配置客户端，服务器端自己会启动一个客户端
+用来发现其它的服务器端，这些服务器端是peer，具有相同的名称eureka.name。
+服务器端在类路径里找eureka-server.properties，通过-Deureka.environment=来指定环境，进一步找eureka-server-{test,prod}.properties。
+本地开发时运行eureka服务器端，大概要等3分钟直到它完全启动，这主要取决于默认的服务器环境，来搜索peer进行同步，和当没有发现peer时进行重试。
+可以使用eureka.numberRegistrySyncRetries=0来设置等待时间。
+Deploying-Eureka-Servers-in-EC2
+
+Understanding eureka client server communication
+先初始化一个eureka客户端，然后再和服务器端交互。
+默认eureka客户端开始的状态是STARTING，这样在可以服务流量之前，实例有机会做一些和应用程序相关的初始化。
+应用可以显式地调节实例状态为UP，这样它就可以接收流量。应用也可以注册健康检查回调，它可以将实例的状态改变为DOWN。
+在netflix我们也使用OUT_OF_SERVICE状态，主要用于把一个实例从流量中摘除，它在新修订版本部署有问题时可以非常容易地回滚。
+回滚修订版本其实就是通过设置实例为OUT_OF_SERVICE状态来关闭流量。
+Eureka Client Operations
+eureka客户端首先尝试与位于同一个zone中的eureka服务器通信，如果无法找到服务器时再故障转移到其它zone。
+应用程序客户端可以使用从eureka客户端返回的信息来进行负载均衡。请确保在失败时重试，并且保持超时时间低一些，因为可能出现
+一种场景，在停用时服务器端返回的实例不再存在了。eureka客户端将清除http链接如果它已经空闲超过30秒，主要是由于AWS防火墙
+做了限制。客户端和服务器端通信采用以下方式，
+Register，eureka客户端把运行实例的信息注册到eureka服务器，注册发生在第一次心跳时（30秒后）。
+Renew，每30秒发送心跳更新租约，这种更新告知eureka服务器实例还活着。如果服务器达到90秒还未看到更新，它把实例从注册中移除。
+一个明智的做法是不要改变更新的间隔，因为服务器端使用这些信息来决定客户端到服务器端的通信是否有一个广为传播的问题。
+Fetch Registry，eureka客户端从服务器端获取注册信息并缓存在本地，客户端使用这些信息来查找其它服务，这个信息会周期性地更新，
+获得最后一个获取的信息和当前信息之间的增量更新，增量信息在服务器端持有较长（大约3分钟），因此增量获取可能返回相同的实例，
+eureka客户端自动处理重复信息。在获取增量后，eureka客户端和服务器端间调和信息，通过比较从服务器端返回的实例数量，如果出于
+某些原因信息不匹配，所有的注册信息会再次被获取。服务器端缓存有增量的压缩负载，所有的注册，每个应用相同的未压缩信息。负载
+支持JSON和XML格式，客户端采用压缩JSON格式获取信息，使用jersey。
+Cancel
+在客户端关机时会向服务器端发送一个取消请求，从服务器端的实例注册中移除该实例，因而有效地把该实例从流量中摘除。
+Time Lag
+来自于客户端的所有操作需要话费一些时间才能反映到服务器端，稍后出现在其它的客户端。这主要是由于服务器端的负载缓存，周期性的刷新来
+反映新信息。客户端也是周期性地获取增量，因此可能需要花费2分钟才使改变传播到所有客户端。
+Communication mechanism
+默认客户端和服务器端使用Jersey和Jackson实现的JSON格式，这中行为可以被重写为你自己的机制。
+Server Self Preservation Mode
+eureka服务器将进入自我保护模式，如果它检测到超过了期望数目的已经注册了的客户端已经以一个不优雅的方式终止了它们的链接，同时开始进行驱逐。
+这主要用来确保突然变化的网络事件不会擦掉eureka注册数据，使这个往下游传播到所有的客户端。
+为了更好的理解自我保护，它帮助首先理解eureka客户端如何结束它们的注册生命周期。eureka协议要求客户端执行一个显式的注销动作当它们
+永久地离开时。例如，在提供的Java客户端里，实在shutdown()方法里来完成的。任何客户端连续失败3次的心跳更新，被认为是一个非干净的
+终止，将会被后台驱逐进程驱逐。当当前注册中有超过百分之十五是这种状态，自我保护将被激活。
+当处于自我保护模式，eureka服务器端将停止所有的实例驱逐直到：心跳更新的数目看起来回到期望阈值之上，或自我保护被禁用。
+自我保护默认启用，启动自我保护的默认阈值是大于当前注册的百分之十五。配置自我保护阈值：eureka.renewalPercentThreshold=0.0-1.0。
+禁用自我保护：eureka.enableSelfPreservation=false。
+在生产环境，如果由于一些正当合理的原因你的服务器已经进入自我保护，可以通过配置临时禁用自我保护来迫使服务器从自我保护模式中出来。
+在这种情形，一个人工操作应该被评估，并采取合适的动作。
+Eureka REST operations
+REST操作用于非Java应用使用eureka。appID是应用的名字，instanceID是和实例关联的唯一ID，在非AWS环境它是实例的主机名。
+一个应用下面可以有多个实例。
+主要操作有，注册实例，注销实例，发送心跳，查询所有实例，查询某个应用的所有实例等。
+Understanding Eureka Peer to Peer Communication
+eureka客户端尝试与自己在同一个zone中的服务器通信，如果通信有问题或服务器不存在，则故障转移到其它zone中的服务器。
+一旦服务器开始接收流量，在一个服务器上执行过的所有操作，被复制到该服务器知道的所有peer节点。如果一个操作失败了，
+信息会在下次心跳时被重新安排，也会在服务器间复制。
+当eureka服务器启动起来，它尝试从一个邻居节点获取所有的实例注册信息。如果这有问题，在放弃之前它会尝试从所有的peer节点获取信息。
+如果这个服务器能够成功地获取到所有实例，它将基于这些信息来设置它应该接收的更新阈值。任何时候更新跌落至配置的百分比（15分钟内低于
+百分之八十五），服务器停止超时实例来保护当前实例注册信息。
+在netflix，上面的这种保障叫做自我保护模式，主要用作在一种情景下的保护，就是所有客户端中的一部分和服务器之间存在一个网络分区时。
+在这些情形，服务器尝试保护它已经拥有的信息。在大批量停用的情形下，这样可能导致客户端获取到的实例不再存在。客户端必须确保它们能够
+迅速恢复对于遇到这样的服务器。这种情形下最好的保护就是快速超时并尝试其它服务器。
+这种情况，就是一个服务器不能够从邻居节点获取注册信息，它等待5分钟，让客户端能够来注册它们的信息。服务器努力尝试不去提供部分信息给
+客户端，通过扭曲仅一组实例的流量和引起容量问题。
+eureka服务器间的通信机制和eureka客户端与服务器端间的通信机制一样。
+在peer间网络停用这种情形下，下面的事情可能发生：
+在peer间的心跳复制可能失败，服务器检测到这种情况，进入自我保护模式，保护当前状态。
+注册可能发生在一个孤立的服务器，一些客户端可能反映新的注册，其它客户端不可能。
+这种情形会自动得到纠正，在网络链接恢复到一个稳定状态后。当peer间能够很好地通信，信息会自动传递到那些缺少这些信息的服务器上。
+在网络停用期间，服务器尽可能的迅速恢复，不同的客户端可能看到不同的服务器视图。
+Overriding Default Configurations
+通过扩展默认的配置类，Cloud or Datacenter Instance Configuration，Eureka Client Configuration，Eureka Server Configuration
+为注册信息添加自定义metadata，一是静态配置eureka.metadata.mykey=myvalue，二是写代码。
+
+http://cloud.spring.io/spring-cloud-static/Edgware.SR4/multi/multi_spring-cloud-eureka-server.html
+12. Service Discovery: Eureka Server
+默认每个eureka服务器端也同时是客户端，要求至少一个service url来定位一个peer，如不不提供的话服务也可以运行和工作。
+单节点模式时配置registerWithEureka: false，fetchRegistry: false，defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+此时的service url指向的是自身，而不是一个peer。
+peer感知，多运行几个eureka服务器端实例，让它们相互注册，这样更加高可用和迅速恢复，事实上，这是eureka的默认行为。所有我们需要做的就是
+添加一个合法的service url指向一个peer
+http://cloud.spring.io/spring-cloud-static/Edgware.SR4/multi/multi__service_discovery_eureka_clients.html
+11. Service Discovery: Eureka Clients
+一个应用既是eureka实例也是客户端，因为它要注册它自己，同时也查询注册信息来定位其它服务。spring.application.name需要配置，因为它默认
+的eureka service id或vip。
+站在服务的角度，服务的提供者和消费者其实是一样的，都位于eureka的客户端，都会被客户端注册到eureka服务器端。
+站在eureka的角度，服务器端用来存储注册信息，客户端用来把服务的信息注册到服务器端和从服务器端定位其它服务的信息，
+在集群模式时，服务器端也会启动一个客户端，用来和其它的服务器端进行通信，把注册信息复制到其它peer节点。
+http://cloud.spring.io/spring-cloud-static/Edgware.SR4/multi/multi_spring-cloud-ribbon.html
+16. Client Side Load Balancer: Ribbon
+ribbon是一个客户端的负载均衡器，feign已经使用了ribbon。
+自定义ribbon客户端，使用外部文件<client>.ribbon.*配置，也可以使用@RibbonClient进行更完全的控制，实现接口或继承类，并把它们作为Bean
+注册到容器中，来替换默认的Bean达到自定义。除了注册到容器中外，也可以在配置文件中通过<clientName>.ribbon.XXXClassName指定实现类的名称，
+这种配置的优先级高于向容器中直接注册Bean那种形式。
+当ribbon和eureka连用时，RibbonServerList被用DiscoveryEnabledNIWSServerList代替，从eureka获取服务器列表，使用NIWSDiscoveryPing让
+eureka来确定服务器是否存活。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
